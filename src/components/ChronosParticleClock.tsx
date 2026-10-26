@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { HomeMusicPlayerCard } from './HomeMusicPlayerCard';
 
 interface Point {
   u: number;
@@ -592,6 +593,21 @@ export const ChronosParticleClock: React.FC = () => {
         >
           {dateString}
         </p>
+      </div>
+
+      {/* Album-Style Music Player Card (z-20, in the space between the date and the bottom navigation dock) */}
+      <div
+        className="absolute left-1/2 -translate-x-1/2 z-20 flex flex-col items-center justify-center pointer-events-auto"
+        style={{
+          top: `${dateTopPx + 24}px`,
+          bottom: '96px',
+          width: '100%',
+          maxWidth: '360px',
+          paddingLeft: '16px',
+          paddingRight: '16px',
+        }}
+      >
+        <HomeMusicPlayerCard />
       </div>
     </div>
   );

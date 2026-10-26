@@ -234,7 +234,7 @@ export const TopNavigationDock: React.FC<TopNavigationDockProps> = ({
                 aria-label={item.label}
                 aria-current={isActive ? 'page' : undefined}
                 title={item.label}
-                className="group relative flex items-center justify-center w-full h-full cursor-pointer select-none focus:outline-none focus-visible:ring-1 focus-visible:ring-[#C9A15B]/50"
+                className="group relative flex items-center justify-center w-full h-full cursor-pointer select-none outline-none focus:outline-none focus-visible:outline-none ring-0 focus:ring-0 focus-visible:ring-0 active:outline-none border-0 [-webkit-tap-highlight-color:transparent]"
               >
                 <motion.span
                   initial={false}

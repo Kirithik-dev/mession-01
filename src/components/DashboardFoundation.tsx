@@ -3,20 +3,25 @@ import { AnimatePresence, motion } from 'motion/react';
 import { TopNavigationDock } from './TopNavigationDock';
 import { ChronosParticleClock } from './ChronosParticleClock';
 import { AlarmControlCentre } from './AlarmControlCentre';
+import { ImagesGallerySection } from './ImagesGallerySection';
+import { PhonkSection } from './PhonkSection';
+import { SettingsSection } from './SettingsSection';
 import { TabId } from '../types/mission';
 
 /**
  * MISSION Dashboard Foundation Component
  * Houses the floating bottom navigation bar and manages active section state:
- * - 'home': Immersive CHRONOS Realtime Particle Clock (Upper Composition)
- * - 'clock': Alarm Control Centre & Chrono Tools
- * - 'images', 'phonk', 'settings': Clean sections
+ * - 'home': Immersive CHRONOS Realtime Particle Clock & Dynamic Music Player
+ * - 'clock': Alarm Control Centre & Hanging Industrial Lamp
+ * - 'images': Independent Image Archive & Gallery
+ * - 'phonk': Midnight Drift Frequency Radio
+ * - 'settings': System & Media Configuration
  */
 export const DashboardFoundation: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabId>('home');
 
   return (
-    <div className="relative w-full h-full min-h-screen bg-[#030305] text-white overflow-hidden select-none flex flex-col justify-between">
+    <div className="relative w-full h-full bg-[#050507] text-white overflow-hidden select-none flex flex-col justify-between">
       {/* Main Section Viewport Container */}
       <main className="relative z-10 flex-1 w-full h-full">
         <AnimatePresence mode="wait">
@@ -37,27 +42,57 @@ export const DashboardFoundation: React.FC = () => {
           {activeTab === 'clock' && (
             <motion.section
               key="clock"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-              aria-label="Clock Section - Alarm Control Centre"
-              className="w-full h-full absolute inset-0 overflow-hidden flex flex-col items-center justify-start"
+              aria-label="Clock Section"
+              className="w-full h-full absolute inset-0 overflow-hidden"
             >
               <AlarmControlCentre />
             </motion.section>
           )}
 
-          {activeTab !== 'home' && activeTab !== 'clock' && (
+          {activeTab === 'images' && (
             <motion.section
-              key={activeTab}
+              key="images"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-              aria-label={`${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Section`}
-              className="w-full h-full absolute inset-0 flex items-center justify-center"
-            />
+              aria-label="Images Section"
+              className="w-full h-full absolute inset-0 overflow-hidden"
+            >
+              <ImagesGallerySection />
+            </motion.section>
+          )}
+
+          {activeTab === 'phonk' && (
+            <motion.section
+              key="phonk"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+              aria-label="Phonk Section"
+              className="w-full h-full absolute inset-0 overflow-hidden"
+            >
+              <PhonkSection />
+            </motion.section>
+          )}
+
+          {activeTab === 'settings' && (
+            <motion.section
+              key="settings"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+              aria-label="Settings Section"
+              className="w-full h-full absolute inset-0 overflow-hidden"
+            >
+              <SettingsSection />
+            </motion.section>
           )}
         </AnimatePresence>
       </main>

@@ -13,6 +13,25 @@
     user-select: none;
     -webkit-user-select: none;
   }
+
+  /* Suppress default browser scrollbars for clean near-black canvas */
+  * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  *::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 /* Custom cinematic animations */
@@ -47,4 +66,3 @@
 .animate-sparkle {
   animation: pulseGlow 4s ease-in-out infinite;
 }
-
