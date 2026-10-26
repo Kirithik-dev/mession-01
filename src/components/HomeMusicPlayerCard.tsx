@@ -106,6 +106,8 @@ export const HomeMusicPlayerCard: React.FC = () => {
     songs,
     currentTrackIndex,
     currentTrack,
+    dailyTrack,
+    dailyImage,
     isPlaying,
     currentTime,
     duration,
@@ -140,12 +142,25 @@ export const HomeMusicPlayerCard: React.FC = () => {
           }}
         />
 
+        {/* Ambient daily image glow if active */}
+        {dailyImage?.url && (
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 rounded-[21px] sm:rounded-[23px] pointer-events-none opacity-10 filter blur-xl scale-125"
+            style={{
+              backgroundImage: `url(${dailyImage.url})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+            }}
+          />
+        )}
+
         <AnimatePresence mode="wait">
           {!hasSongs ? (
             /* ===================================================================
                EMPTY STATE: Minimal Royal Informational Composition
                - Strictly informational: zero buttons, zero clickable actions
-               - Refined vinyl disc with champagne-gold center
+               - Refined daily image or vinyl disc with champagne-gold center
                - Header: "NO SONGS FOUND"
                - Subtitle: "Your music library is empty."
                =================================================================== */
@@ -157,10 +172,26 @@ export const HomeMusicPlayerCard: React.FC = () => {
               transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
               className="relative z-10 w-full flex flex-col items-center justify-center my-auto px-2"
             >
-              {/* Refined Disc Emblem */}
-              <div className="relative z-10 mb-4">
-                <RoyalVinylDisc isSpinning={false} sizeClass="w-13 h-13 sm:w-14 sm:h-14" />
+              {/* Daily Image / Refined Disc Emblem */}
+              <div className="relative z-10 mb-3.5">
+                {dailyImage?.url ? (
+                  <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-2xl overflow-hidden border border-[#C9A15B]/40 shadow-xl bg-[#141418] mx-auto">
+                    <img
+                      src={dailyImage.url}
+                      alt={dailyImage.title || "Today's Photo"}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                ) : (
+                  <RoyalVinylDisc isSpinning={false} sizeClass="w-13 h-13 sm:w-14 sm:h-14" />
+                )}
               </div>
+
+              {dailyImage?.title && (
+                <p className="relative z-10 text-[9.5px] font-mono tracking-[0.16em] text-[#C9A15B] uppercase mb-1 truncate max-w-[240px]">
+                  {dailyImage.title}
+                </p>
+              )}
 
               {/* Primary Empty State Header */}
               <h3 className="relative z-10 text-[13px] sm:text-[14px] font-mono font-bold tracking-[0.2em] text-[#EDEDED] uppercase">
@@ -175,12 +206,11 @@ export const HomeMusicPlayerCard: React.FC = () => {
           ) : (
             /* ===================================================================
                ACTIVE PLAYER: Royal Minimal Tactile Audio Player
-               - Rotating Vinyl Record with real-time spin state
+               - Displays today's selected track info & artwork / vinyl disc
                - Track title & artist
                - Scrub bar with elapsed / total time
                - Skip Prev / Play-Pause with gold accent / Skip Next
                - Volume toggle
-               - Zero management controls (library managed in Phonk tab)
                =================================================================== */
             <motion.div
               key="active-player"
@@ -196,15 +226,33 @@ export const HomeMusicPlayerCard: React.FC = () => {
                   TRACK {currentTrackIndex + 1} OF {songs.length}
                 </span>
 
-                <span className="text-[9.5px] font-mono tracking-[0.16em] text-[#C9A15B]/75 uppercase">
-                  MISSION AUDIO
+                <span className="text-[9.5px] font-mono tracking-[0.16em] text-[#C9A15B]/85 uppercase">
+                  {dailyTrack && currentTrack?.id === dailyTrack.id ? "TODAY'S PHONK" : "MISSION AUDIO"}
                 </span>
               </div>
 
-              {/* Center Composition: Rotating Vinyl & Track Information */}
+              {/* Center Composition: Daily Artwork / Rotating Vinyl & Track Information */}
               <div className="flex items-center gap-3.5 px-1 my-auto">
-                <div className="shrink-0">
-                  <RoyalVinylDisc isSpinning={isPlaying} sizeClass="w-14 h-14 sm:w-16 sm:h-16" />
+                <div className="shrink-0 relative">
+                  {dailyImage?.url ? (
+                    <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-2xl overflow-hidden border border-[#C9A15B]/35 shadow-lg bg-[#141418] flex items-center justify-center">
+                      <img
+                        src={dailyImage.url}
+                        alt={dailyImage.title || "Daily Artwork"}
+                        className="w-full h-full object-cover"
+                      />
+                      {/* Audio activity badge */}
+                      <div className="absolute bottom-1 right-1 w-3.5 h-3.5 rounded-full bg-black/85 border border-[#C9A15B]/40 flex items-center justify-center">
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            isPlaying ? 'bg-[#C9A15B] animate-pulse' : 'bg-[#C9A15B]/50'
+                          }`}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <RoyalVinylDisc isSpinning={isPlaying} sizeClass="w-14 h-14 sm:w-16 sm:h-16" />
+                  )}
                 </div>
 
                 <div className="flex-1 min-w-0 text-left">

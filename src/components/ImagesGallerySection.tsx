@@ -4,6 +4,12 @@ import { Plus, Trash2, X, Check } from 'lucide-react';
 import { useMediaLibrary } from '../context/MediaLibraryContext';
 import { ImageItem } from '../types/media';
 import { GalleryLiquidRibbonBackground } from './GalleryLiquidRibbonBackground';
+import {
+  saveImageRecords,
+  getOrRegisterImageUrl,
+  isDuplicateImageRecord,
+  StoredImageRecord,
+} from '../utils/imageStorage';
 
 interface DateGroup {
   key: string;
@@ -38,6 +44,24 @@ export const ImagesGallerySection: React.FC = () => {
   // Confirmation modal state ('selection' | 'single' | null) & guard against duplicate clicks
   const [confirmDeleteType, setConfirmDeleteType] = useState<'selection' | 'single' | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
+
+  // Discreet toast feedback for imports and gallery operations
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = useCallback((msg: string) => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setToastMessage(msg);
+    toastTimeoutRef.current = setTimeout(() => {
+      setToastMessage(null);
+    }, 3200);
+  }, []);
+
+  React.useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    };
+  }, []);
 
   // Long-press detection refs
   const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -123,48 +147,133 @@ export const ImagesGallerySection: React.FC = () => {
     setIsDeleting(false);
   }, []);
 
-  const handleExecuteDelete = useCallback(() => {
+  const handleExecuteDelete = useCallback(async () => {
     if (isDeleting) return;
     setIsDeleting(true);
     try {
       if (confirmDeleteType === 'selection') {
         const ids = Array.from(selectedIds);
-        removeImages(ids);
-        exitSelectionMode();
+        const success = await removeImages(ids);
+        if (success) {
+          showToast(`Deleted ${ids.length} ${ids.length === 1 ? 'image' : 'images'}`);
+          exitSelectionMode();
+        } else {
+          showToast('Failed to delete selected images');
+        }
       } else if (confirmDeleteType === 'single') {
         if (selectedImage) {
-          removeImage(selectedImage.id);
-          setSelectedImage(null);
+          const success = await removeImage(selectedImage.id);
+          if (success) {
+            showToast('Image deleted');
+            setSelectedImage(null);
+          } else {
+            showToast('Failed to delete image');
+          }
         }
         setConfirmDeleteType(null);
       }
     } finally {
       setIsDeleting(false);
     }
-  }, [confirmDeleteType, exitSelectionMode, isDeleting, removeImage, removeImages, selectedIds, selectedImage]);
+  }, [confirmDeleteType, exitSelectionMode, isDeleting, removeImage, removeImages, selectedIds, selectedImage, showToast]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
+    const newRecords: StoredImageRecord[] = [];
     const newItems: ImageItem[] = [];
     const now = Date.now();
+    let duplicatesCount = 0;
+    let unsupportedCount = 0;
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const objectUrl = URL.createObjectURL(file);
-      const title = file.name.replace(/\.[^/.]+$/, '').toUpperCase();
 
-      newItems.push({
-        id: `img-${now}-${i}-${Math.random().toString(36).substring(2, 7)}`,
+      // Format validation: must be image
+      const isImage =
+        file.type.startsWith('image/') ||
+        /\.(jpe?g|png|webp|gif|svg|avif|bmp|ico)$/i.test(file.name);
+
+      if (!isImage) {
+        unsupportedCount++;
+        continue;
+      }
+
+      // Check duplicates against existing library and current batch
+      const isDup =
+        isDuplicateImageRecord(file.name, file.size, images) ||
+        isDuplicateImageRecord(file.name, file.size, newRecords);
+
+      if (isDup) {
+        duplicatesCount++;
+        continue;
+      }
+
+      const id = `img-${now}-${i}-${Math.random().toString(36).substring(2, 7)}`;
+      const title = file.name.replace(/\.[^/.]+$/, '').trim().toUpperCase();
+
+      const record: StoredImageRecord = {
+        id,
         title,
-        url: objectUrl,
+        blob: file,
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.type || 'image/jpeg',
         addedAt: now - i * 10,
         isDemo: false,
-      });
+      };
+
+      newRecords.push(record);
     }
 
-    addImages(newItems);
+    if (newRecords.length > 0) {
+      try {
+        // Persist image Blobs and metadata into IndexedDB vault FIRST
+        await saveImageRecords(newRecords);
+
+        // Generate fresh managed object URLs from the persistent records
+        for (const rec of newRecords) {
+          const url = getOrRegisterImageUrl(rec.id, rec.blob);
+          newItems.push({
+            id: rec.id,
+            title: rec.title,
+            url,
+            fileName: rec.fileName,
+            fileSize: rec.fileSize,
+            addedAt: rec.addedAt,
+            isDemo: false,
+          });
+        }
+
+        // Add to UI state only after successful persistence
+        addImages(newItems);
+
+        if (duplicatesCount > 0) {
+          showToast(
+            `Imported ${newItems.length} ${
+              newItems.length === 1 ? 'image' : 'images'
+            } (${duplicatesCount} duplicate skipped)`
+          );
+        } else {
+          showToast(
+            `Stored ${newItems.length} ${
+              newItems.length === 1 ? 'image' : 'images'
+            } in gallery`
+          );
+        }
+      } catch (err) {
+        showToast('Failed to save images to storage vault');
+      }
+    } else if (duplicatesCount > 0) {
+      showToast(
+        `${duplicatesCount} duplicate ${
+          duplicatesCount === 1 ? 'image' : 'images'
+        } skipped`
+      );
+    } else if (unsupportedCount > 0) {
+      showToast('Selected file format is not supported (images only)');
+    }
 
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -232,6 +341,21 @@ export const ImagesGallerySection: React.FC = () => {
     <div className="relative w-full h-full min-h-screen bg-black text-white flex flex-col select-none overflow-hidden">
       {/* Cinematic 3D Living Liquid-Ribbon Background */}
       <GalleryLiquidRibbonBackground />
+
+      {/* Floating Toast Feedback */}
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: -16, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.95 }}
+            transition={{ duration: 0.18 }}
+            className="fixed top-16 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-full bg-[#18181C]/95 border border-[#C9A15B]/40 shadow-2xl text-[11px] font-mono tracking-wider text-[#EDEDED] pointer-events-none select-none backdrop-blur-md"
+          >
+            {toastMessage}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Hidden file input for uploading images */}
       <input

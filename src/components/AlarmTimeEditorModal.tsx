@@ -265,9 +265,23 @@ export const AlarmTimeEditorModal: React.FC<AlarmTimeEditorModalProps> = ({
 
         {/* Repeat Days Selector */}
         <div className="flex flex-col gap-1.5">
-          <span className="text-[10px] tracking-[0.2em] font-medium text-neutral-400 uppercase">
-            Repeat Days
-          </span>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] tracking-[0.2em] font-medium text-neutral-400 uppercase">
+              Repeat Schedule
+            </span>
+            <span className="text-[10px] font-mono text-[#F5CE76] tracking-wider uppercase">
+              {repeatDays.length === 0
+                ? 'Once (One-Time)'
+                : repeatDays.length === 7
+                ? 'Every Day'
+                : repeatDays.length === 5 && [1, 2, 3, 4, 5].every((d) => repeatDays.includes(d))
+                ? 'Weekdays'
+                : repeatDays.length === 2 && [0, 6].every((d) => repeatDays.includes(d))
+                ? 'Weekends'
+                : `${repeatDays.length} Days`}
+            </span>
+          </div>
+
           <div className="flex items-center justify-between gap-1">
             {DAYS_OF_WEEK.map((day) => {
               const isSelected = repeatDays.includes(day.dayIndex);
@@ -287,6 +301,43 @@ export const AlarmTimeEditorModal: React.FC<AlarmTimeEditorModalProps> = ({
                 </button>
               );
             })}
+          </div>
+
+          {/* Quick Schedule Buttons: Once, Weekdays, Daily */}
+          <div className="flex items-center gap-1.5 mt-1">
+            <button
+              type="button"
+              onClick={() => setRepeatDays([])}
+              className={`px-2 py-0.5 text-[10px] rounded font-mono transition-colors cursor-pointer ${
+                repeatDays.length === 0
+                  ? 'bg-[#F5CE76]/20 text-[#F5CE76] border border-[#F5CE76]/40'
+                  : 'bg-white/[0.03] text-neutral-400 hover:text-white border border-white/[0.04]'
+              }`}
+            >
+              Once
+            </button>
+            <button
+              type="button"
+              onClick={() => setRepeatDays([1, 2, 3, 4, 5])}
+              className={`px-2 py-0.5 text-[10px] rounded font-mono transition-colors cursor-pointer ${
+                repeatDays.length === 5 && [1, 2, 3, 4, 5].every((d) => repeatDays.includes(d))
+                  ? 'bg-[#F5CE76]/20 text-[#F5CE76] border border-[#F5CE76]/40'
+                  : 'bg-white/[0.03] text-neutral-400 hover:text-white border border-white/[0.04]'
+              }`}
+            >
+              Weekdays
+            </button>
+            <button
+              type="button"
+              onClick={() => setRepeatDays([0, 1, 2, 3, 4, 5, 6])}
+              className={`px-2 py-0.5 text-[10px] rounded font-mono transition-colors cursor-pointer ${
+                repeatDays.length === 7
+                  ? 'bg-[#F5CE76]/20 text-[#F5CE76] border border-[#F5CE76]/40'
+                  : 'bg-white/[0.03] text-neutral-400 hover:text-white border border-white/[0.04]'
+              }`}
+            >
+              Daily
+            </button>
           </div>
         </div>
 

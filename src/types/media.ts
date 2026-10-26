@@ -24,4 +24,6 @@ export interface ImageItem {
   aspectRatio?: number;
   addedAt: number;
   isDemo?: boolean;
+  fileName?: string;
+  fileSize?: number;
 }

@@ -8,6 +8,7 @@ import {
   formatTime12h,
   formatRepeatDays,
 } from '../utils/alarmTime';
+import { parseTimeString } from '../utils/alarmEngine';
 import { useAlarmContext } from '../context/AlarmContext';
 import { Plus, Pencil, Trash2, BellOff } from 'lucide-react';
 
@@ -27,11 +28,14 @@ export const AlarmControlCentre: React.FC = () => {
     alarms,
     isMasterOn,
     nextActiveAlarm,
+    activeSession,
     toggleMaster,
     toggleAlarm,
     addAlarm,
     updateAlarm,
     deleteAlarm,
+    snoozeAlarm,
+    stopAlarm,
   } = useAlarmContext();
 
   // Modal editor state
@@ -66,12 +70,19 @@ export const AlarmControlCentre: React.FC = () => {
     enabled: boolean;
   }) => {
     if (data.id) {
+      const existing = alarms.find((a) => a.id === data.id);
+      const { hour, minute } = parseTimeString(data.time);
       updateAlarm({
         id: data.id,
         time: data.time,
+        hour,
+        minute,
         label: data.label,
         repeatDays: data.repeatDays,
         enabled: data.enabled,
+        createdAt: existing?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        lastTriggeredAt: existing?.lastTriggeredAt || null,
       });
     } else {
       addAlarm({
@@ -83,8 +94,11 @@ export const AlarmControlCentre: React.FC = () => {
     }
   };
 
-  // Determine if lamp is illuminated
-  const isLampIlluminated = isMasterOn && nextActiveAlarm !== null;
+  // Determine if lamp is illuminated: ON if an active alarm is scheduled, or if actively ringing/snoozed
+  const isLampIlluminated =
+    (isMasterOn && nextActiveAlarm !== null) ||
+    activeSession?.status === 'ringing' ||
+    activeSession?.status === 'snoozed';
 
   return (
     <div
@@ -105,12 +119,61 @@ export const AlarmControlCentre: React.FC = () => {
         />
 
         {/* ===================================================================
-            2. CONCISE REACTIVE COUNTDOWN ("6 HOURS LEFT" / "30 MIN LEFT")
-            - Completely unmounted from DOM when lamp is OFF or no alarms enabled
-            - No separate HOURS, MINUTES, SECONDS boxes
+            2. CONCISE REACTIVE COUNTDOWN OR ACTIVE RINGING/SNOOZED CONTROLLER
+            - When ringing: displays ringing notice, sound source, SNOOZE and STOP
+            - When snoozed: displays countdown and CANCEL SNOOZE
+            - When scheduled: displays concise countdown ("6 HOURS LEFT")
+            - When disarmed: displays STANDBY · ALARMS DISARMED
            =================================================================== */}
         <div className="min-h-[58px] sm:min-h-[64px] flex items-center justify-center mt-1 sm:mt-2">
-          {isLampIlluminated && nextActiveAlarm ? (
+          {activeSession?.status === 'ringing' ? (
+            <div className="flex flex-col items-center animate-fade-in z-20">
+              <div className="font-mono text-xl sm:text-2xl font-semibold tracking-widest text-[#F5CE76] drop-shadow-[0_0_18px_rgba(245,206,118,0.7)] animate-pulse">
+                ALARM RINGING
+              </div>
+              <div className="text-[10px] sm:text-[11px] tracking-wider text-neutral-300 uppercase mt-0.5 flex items-center gap-1.5">
+                <span className="font-semibold text-white">{activeSession.alarmLabel}</span>
+                <span className="text-neutral-600">·</span>
+                <span className="text-neutral-400">
+                  {activeSession.hasAudio ? `♪ ${activeSession.trackTitle || 'Vault Track'}` : 'VISUAL MODE'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => snoozeAlarm()}
+                  className="px-3.5 py-1 rounded-full bg-white/[0.08] hover:bg-white/[0.16] border border-white/[0.14] text-[11px] font-semibold tracking-wider uppercase text-neutral-200 transition-all cursor-pointer active:scale-95 shadow-sm"
+                >
+                  Snooze ({activeSession.snoozeDurationMinutes}m)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => stopAlarm()}
+                  className="px-4 py-1 rounded-full bg-[#E5484D] hover:bg-[#F2555A] text-white text-[11px] font-bold tracking-wider uppercase transition-all cursor-pointer active:scale-95 shadow-[0_0_14px_rgba(229,72,77,0.4)]"
+                >
+                  Stop
+                </button>
+              </div>
+            </div>
+          ) : activeSession?.status === 'snoozed' ? (
+            <div className="flex flex-col items-center animate-fade-in z-20">
+              <div className="font-mono text-lg sm:text-xl font-light tracking-widest text-[#F5CE76]">
+                SNOOZED · {activeSession.snoozeUntil ? Math.max(1, Math.ceil((new Date(activeSession.snoozeUntil).getTime() - Date.now()) / 60000)) : 5}M REMAINING
+              </div>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-[10px] text-neutral-400 uppercase tracking-widest">
+                  {activeSession.alarmLabel}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => stopAlarm()}
+                  className="px-2.5 py-0.5 rounded-full bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-[10px] font-medium tracking-wider uppercase text-neutral-300 transition-colors cursor-pointer"
+                >
+                  Stop
+                </button>
+              </div>
+            </div>
+          ) : isLampIlluminated && nextActiveAlarm ? (
             <AlarmCountdownDisplay
               activeAlarm={nextActiveAlarm.alarm}
               nextDate={nextActiveAlarm.nextDate}

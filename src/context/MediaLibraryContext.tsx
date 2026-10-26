@@ -2,11 +2,35 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { TrackItem, ImageItem } from '../types/media';
 import { generateAmbientChronoTrack } from '../utils/audioGenerator';
 import { getAudioFromVault, deleteAudioFromVault } from '../utils/audioStorage';
+import {
+  getOrRegisterImageUrl,
+  revokeImageUrl,
+  revokeImageUrls,
+  revokeAllImageUrls,
+  getAllImageRecords,
+  saveImageRecord,
+  deleteImageRecord,
+  deleteImageRecords,
+  clearAllImageRecords,
+  StoredImageRecord,
+} from '../utils/imageStorage';
+import { recordAppError } from '../utils/errorCentre';
+import {
+  resolveDailySelection,
+  getLocalCalendarDate,
+  DailySelectionResult,
+} from '../utils/dailySelectionService';
 
 interface MediaLibraryContextType {
   // Independent Libraries
   songs: TrackItem[];
   images: ImageItem[];
+
+  // Daily Selection API
+  dailyTrack: TrackItem | null;
+  dailyImage: ImageItem | null;
+  dailySelectionDate: string;
+  refreshDailySelection: () => Promise<void>;
 
   // Songs API
   addSong: (song: TrackItem) => void;
@@ -18,9 +42,9 @@ interface MediaLibraryContextType {
   // Images API
   addImage: (image: ImageItem) => void;
   addImages: (images: ImageItem[]) => void;
-  removeImage: (id: string) => void;
-  removeImages: (ids: string[]) => void;
-  clearImages: () => void;
+  removeImage: (id: string) => Promise<boolean>;
+  removeImages: (ids: string[]) => Promise<boolean>;
+  clearImages: () => Promise<void>;
   addDemoImages: () => void;
 
   // Audio Playback State & Controls
@@ -60,19 +84,8 @@ export const MediaLibraryProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return [];
   });
 
-  // Images state (starts empty to respect Case A initial condition)
-  const [images, setImages] = useState<ImageItem[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY_IMAGES);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch {
-      // ignore
-    }
-    return [];
-  });
+  // Images state (starts empty to respect initial condition; rehydrated from IndexedDB)
+  const [images, setImages] = useState<ImageItem[]>([]);
 
   // Persist songs metadata (excluding revoked blob URLs on reload)
   useEffect(() => {
@@ -89,14 +102,128 @@ export const MediaLibraryProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   }, [songs]);
 
-  // Persist images metadata
+  // Persist images metadata (excluding ephemeral object URLs to keep localStorage clean)
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY_IMAGES, JSON.stringify(images));
+      const metadataOnly = images.map((img) => ({
+        id: img.id,
+        title: img.title,
+        url: img.isDemo ? img.url : '', // Only retain external demo URLs; real images generate URLs from Blobs
+        aspectRatio: img.aspectRatio,
+        addedAt: img.addedAt,
+        fileName: img.fileName,
+        fileSize: img.fileSize,
+        isDemo: img.isDemo,
+      }));
+      localStorage.setItem(STORAGE_KEY_IMAGES, JSON.stringify(metadataOnly));
     } catch {
       // ignore
     }
   }, [images]);
+
+  // Rehydrate persistent images from IndexedDB vault on startup and safely migrate accessible legacy blobs
+  useEffect(() => {
+    let active = true;
+
+    const initializeImageVault = async () => {
+      try {
+        const storedRecords = await getAllImageRecords();
+        const storedIdSet = new Set(storedRecords.map((r) => r.id));
+
+        // Safe migration of any legacy metadata in localStorage
+        let legacyItems: ImageItem[] = [];
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY_IMAGES);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) legacyItems = parsed;
+          }
+        } catch {
+          // ignore
+        }
+
+        let expiredSessionCount = 0;
+        const newlyMigrated: StoredImageRecord[] = [];
+
+        for (const item of legacyItems) {
+          if (!item.id || storedIdSet.has(item.id)) continue;
+
+          if (item.url && (item.url.startsWith('blob:') || item.url.startsWith('data:') || item.url.startsWith('http'))) {
+            try {
+              const res = await fetch(item.url);
+              if (res.ok) {
+                const blob = await res.blob();
+                const migratedRec: StoredImageRecord = {
+                  id: item.id,
+                  title: item.title || 'MIGRATED PHOTO',
+                  blob,
+                  fileName: item.fileName || `${item.title || 'photo'}.jpg`,
+                  fileSize: blob.size,
+                  mimeType: blob.type || 'image/jpeg',
+                  addedAt: item.addedAt || Date.now(),
+                  aspectRatio: item.aspectRatio,
+                  isDemo: item.isDemo,
+                };
+                await saveImageRecord(migratedRec);
+                newlyMigrated.push(migratedRec);
+                storedIdSet.add(migratedRec.id);
+              } else {
+                expiredSessionCount++;
+              }
+            } catch {
+              expiredSessionCount++;
+            }
+          } else {
+            expiredSessionCount++;
+          }
+        }
+
+        if (expiredSessionCount > 0) {
+          recordAppError({
+            operation: 'Image Migration',
+            title: 'EXPIRED IMAGE SESSIONS CLEANED',
+            message: `${expiredSessionCount} ${
+              expiredSessionCount === 1 ? 'image reference' : 'image references'
+            } had expired temporary session URLs from before persistent storage was enabled and could not be restored.`,
+            severity: 'warning',
+          });
+        }
+
+        const combinedRecords = [...newlyMigrated, ...storedRecords];
+        // Chronological order: newest first
+        combinedRecords.sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+
+        if (!active) return;
+
+        // Hydrate with fresh object URLs created from the persistent Blobs
+        const liveImages: ImageItem[] = combinedRecords.map((rec) => ({
+          id: rec.id,
+          title: rec.title,
+          url: getOrRegisterImageUrl(rec.id, rec.blob),
+          aspectRatio: rec.aspectRatio,
+          addedAt: rec.addedAt,
+          fileName: rec.fileName,
+          fileSize: rec.fileSize,
+          isDemo: rec.isDemo,
+        }));
+
+        setImages(liveImages);
+      } catch (err) {
+        recordAppError({
+          operation: 'Image Storage',
+          title: 'IMAGE VAULT INITIALIZATION FAILED',
+          message: err instanceof Error ? err.message : String(err),
+          severity: 'critical',
+        });
+      }
+    };
+
+    initializeImageVault();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Player state
   const [currentTrackIndex, setCurrentTrackIndex] = useState<number>(0);
@@ -105,6 +232,64 @@ export const MediaLibraryProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [duration, setDuration] = useState<number>(0);
   const [volume, setVolumeState] = useState<number>(0.85);
   const [isMuted, setIsMuted] = useState<boolean>(false);
+
+  // Daily Selection state
+  const [dailyTrack, setDailyTrack] = useState<TrackItem | null>(null);
+  const [dailyImage, setDailyImage] = useState<ImageItem | null>(null);
+  const [dailySelectionDate, setDailySelectionDate] = useState<string>(getLocalCalendarDate);
+  const hasAlignedDailyTrackRef = useRef<boolean>(false);
+
+  const refreshDailySelection = useCallback(async () => {
+    try {
+      const res = await resolveDailySelection(songs, images);
+      setDailySelectionDate(res.date);
+      setDailyTrack(res.track);
+      setDailyImage(res.image);
+
+      if (res.track) {
+        const foundIndex = songs.findIndex((s) => s.id === res.track!.id);
+        if (foundIndex !== -1) {
+          // On initial load or if current track is invalid, point to daily track
+          if (!hasAlignedDailyTrackRef.current) {
+            hasAlignedDailyTrackRef.current = true;
+            setCurrentTrackIndex(foundIndex);
+          } else {
+            setCurrentTrackIndex((prev) => {
+              if (prev < 0 || prev >= songs.length || !songs[prev]) {
+                return foundIndex;
+              }
+              return prev;
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Daily selection sync error:', err);
+    }
+  }, [songs, images]);
+
+  // Synchronize daily selection whenever library contents change
+  useEffect(() => {
+    refreshDailySelection();
+  }, [refreshDailySelection]);
+
+  // Periodic calendar date change detector (every 15s and on window focus)
+  useEffect(() => {
+    const handleDateTick = () => {
+      const currentDate = getLocalCalendarDate();
+      if (currentDate !== dailySelectionDate) {
+        refreshDailySelection();
+      }
+    };
+
+    const timer = setInterval(handleDateTick, 15000);
+    window.addEventListener('focus', handleDateTick);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', handleDateTick);
+    };
+  }, [dailySelectionDate, refreshDailySelection]);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -279,17 +464,49 @@ export const MediaLibraryProvider: React.FC<{ children: React.ReactNode }> = ({ 
     setImages((prev) => [...newImgs, ...prev]);
   }, []);
 
-  const removeImage = useCallback((id: string) => {
-    setImages((prev) => prev.filter((img) => img.id !== id));
+  const removeImage = useCallback(async (id: string): Promise<boolean> => {
+    try {
+      await deleteImageRecord(id);
+      revokeImageUrl(id);
+      setImages((prev) => prev.filter((img) => img.id !== id));
+      return true;
+    } catch (err) {
+      recordAppError({
+        operation: 'Image Deletion',
+        title: 'FAILED TO DELETE IMAGE',
+        message: err instanceof Error ? err.message : String(err),
+        severity: 'warning',
+      });
+      return false;
+    }
   }, []);
 
-  const removeImages = useCallback((ids: string[]) => {
-    if (!ids || ids.length === 0) return;
-    const idSet = new Set(ids);
-    setImages((prev) => prev.filter((img) => !idSet.has(img.id)));
+  const removeImages = useCallback(async (ids: string[]): Promise<boolean> => {
+    if (!ids || ids.length === 0) return true;
+    try {
+      await deleteImageRecords(ids);
+      revokeImageUrls(ids);
+      const idSet = new Set(ids);
+      setImages((prev) => prev.filter((img) => !idSet.has(img.id)));
+      return true;
+    } catch (err) {
+      recordAppError({
+        operation: 'Image Deletion',
+        title: 'FAILED TO DELETE IMAGES',
+        message: err instanceof Error ? err.message : String(err),
+        severity: 'warning',
+      });
+      return false;
+    }
   }, []);
 
-  const clearImages = useCallback(() => {
+  const clearImages = useCallback(async (): Promise<void> => {
+    try {
+      await clearAllImageRecords();
+    } catch (err) {
+      console.warn('Could not clear IndexedDB image vault:', err);
+    }
+    revokeAllImageUrls();
     setImages([]);
     try {
       localStorage.removeItem(STORAGE_KEY_IMAGES);
@@ -390,6 +607,10 @@ export const MediaLibraryProvider: React.FC<{ children: React.ReactNode }> = ({ 
       value={{
         songs,
         images,
+        dailyTrack,
+        dailyImage,
+        dailySelectionDate,
+        refreshDailySelection,
         addSong,
         addSongs,
         removeSong,
